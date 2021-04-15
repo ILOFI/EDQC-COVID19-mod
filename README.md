@@ -28,7 +28,7 @@ Run `model_simulation.py` after all requirements installed. Both figures and CSV
   - `incidence_simulation_I` estimated number of new cases under simulation scenario with or without some of NPIs, which is defined by the name of CSV.
   - Both `incidence_conbined_intervention_I` and `incidence_simulation_I` are median value of the simulation, the 95% CI is also provided in `incidence_conbined_intervention_I_up(/down)` and  `incidence_simulation_I(/down)`.
 
-Run `sampling_main.py` for parameter sampling in main analysis by MCMC approach, and `sampling_Sn.py` for sampling in sensitivity analyses ($n\in{1,2,3,4,5,6}$). The sampling of parameter will be saved to the **Folder ``objs``**. 
+Run `sampling_main.py` for parameter sampling in main analysis by MCMC approach, and `sampling_Sn.py` for sampling in sensitivity analyses ($$n\in{1,2,3,4,5,6}$$). The sampling of parameter will be saved to the **Folder ``objs``**. 
 *Since it takes a long time to re-estimate the parameters, this repository contains the parameters corresponding to the results in the paper, and the step is optional.*
 
 ## Structure of this repository 
