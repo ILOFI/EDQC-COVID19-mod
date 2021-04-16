@@ -42,4 +42,4 @@ Run `sampling_main.py` for parameter sampling in main analysis by MCMC approach,
 
 ## License
 
-This repository is licensed under the GNU General Public License (GPL).
+This repository is licensed under the GNU General Public License (GPL). 
