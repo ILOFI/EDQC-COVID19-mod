@@ -137,8 +137,10 @@ eta2_noctrl = np.zeros(eta2.shape)
 N: total population of each region, order by valid_names
 initI: first day's infection num, order by valid_names
 '''
+pres_d = 2
 N = population
 initE = [x for x in Etrue[:, 0]]
+initP = [Itrue[0, int(pres_d)] - Itrue[0, 0]]
 initI = [x for x in Itrue[:, 0]]
 initR = [x for x in Rtrue[:, 0]]
 initE[0] = 35
@@ -172,50 +174,54 @@ def get_arr(t, arr):
 
 # In[22]:
 
-def sim_seiisr(INPUT, alpha1, bmi, beta1, sigma, t_range):
+def sim_seiisr(INPUT, alpha1, bmi, beta1, sigma, q, t_range):
     T = len(t_range)
     S = np.zeros(T)
     E = np.zeros(T)
+    P = np.zeros(T)
     I = np.zeros(T)
     IS = np.zeros(T)
     R = np.zeros(T)
     S[0] = INPUT[0]
     E[0] = INPUT[1]
-    I[0] = INPUT[2]
-    IS[0] = INPUT[3]
-    R[0] = INPUT[4]
+    P[0] = INPUT[2]
+    I[0] = INPUT[3]
+    IS[0] = INPUT[4]
+    R[0] = INPUT[5]
     print(INPUT)
-    beta1 = 1 / beta1
+    beta1 = 1 / (beta1 - pres_d)
     for j in range(1, T):
-        eta1j = get_arr(j-1, eta1)
-        eta2j = get_arr(j-1, eta2)
-        bmij = get_bmi(j-1, bmi)
-        sigmaj = get_sigma(j-1, sigma)
-        S[j] = S[j - 1] - alpha1 * S[j - 1] * bmij * I[j - 1] / population[0]
-        E[j] = E[j - 1] + alpha1 * S[j - 1] * bmij * I[j - 1] / population[0]   - beta1 * E[j - 1]
-        I[j] = I[j - 1] + (1-eta1j-eta2j) * beta1 * E[j - 1] - sigmaj * I[j - 1]
-        IS[j] = IS[j - 1] + (eta1j+eta2j) * beta1 * E[j - 1] - sigmaj * IS[j - 1]
+        eta1j = get_arr(j+1, eta1)
+        eta2j = get_arr(j+1, eta2)
+        bmij = get_bmi(j+1, bmi)
+        sigmaj = get_sigma(j+1, sigma)
+        S[j] = S[j - 1] - alpha1 * S[j - 1] * bmij * I[j - 1] / population[0] - q * alpha1 * S[j - 1] * bmij * P[j - 1] / population[0]
+        E[j] = E[j - 1] + alpha1 * S[j - 1] * bmij * I[j - 1] / population[0] + q * alpha1 * S[j - 1] * bmij * P[j - 1] / population[0]  - beta1 * E[j - 1]
+        P[j] = P[j - 1] + beta1 * E[j - 1] - P[j - 1] / pres_d
+        I[j] = I[j - 1] + (1-eta1j-eta2j) * P[j - 1] / pres_d - sigmaj * I[j - 1]
+        IS[j] = IS[j - 1] + (eta1j+eta2j) * P[j - 1] / pres_d - sigmaj * IS[j - 1]
         R[j] = R[j - 1] + sigmaj * (I[j - 1] + IS[j - 1])
 
-    return np.array([S, E, I, IS, R]).T
+    return np.array([S, E, P, I, IS, R]).T
 
 
 # In[23]:
 
-def simulate_single(alpha1, e2, beta1, sigma):
+def simulate_single(alpha1, e2, beta1, sigma, q):
 
     if alpha1 < 0 or beta1 < 0:
         print('Warning ', alpha1, beta1)
     
-    INPUT1 = np.zeros((5))
+    INPUT1 = np.zeros((6))
     INPUT1[0] = population[0]
     INPUT1[1] = initE[streetid]
-    INPUT1[2] = initI[streetid] * (1 - eta1[0] - eta2[0])
-    INPUT1[3] = initI[streetid] * (eta1[0] + eta2[0])
-    INPUT1[4] = initR[streetid]
+    INPUT1[2] = initP[streetid]
+    INPUT1[3] = initI[streetid] * (1 - eta1[0] - eta2[0])
+    INPUT1[4] = initI[streetid] * (eta1[0] + eta2[0])
+    INPUT1[5] = initR[streetid]
     
     t_range = np.arange(0.0, t, 1.0)
-    RES1 = sim_seiisr(INPUT1, alpha1, e2, beta1, sigma, t_range)
+    RES1 = sim_seiisr(INPUT1, alpha1, e2, beta1, sigma, q, t_range)
     
     return RES1
 
@@ -224,7 +230,7 @@ def simulate_single(alpha1, e2, beta1, sigma):
 
 import numpy as np
 
-def SEIR_MODEL1(Ecumm, Icumm, Rcumm, init_S, init_E, init_I, init_R, bmi, sigma):
+def SEIR_MODEL1(Ecumm, Icumm, Rcumm, init_S, init_E, init_P, init_I, init_R, bmi, sigma):
     T = len(Ecumm)
     print(T)
 #     case_data = Icumm
@@ -232,16 +238,19 @@ def SEIR_MODEL1(Ecumm, Icumm, Rcumm, init_S, init_E, init_I, init_R, bmi, sigma)
     
     alpha1 = Uniform('alpha1', 1e-3, 5, value = 0.9)
     beta1 = Weibull('beta1', alpha = 1.681228, beta = 6.687700 )
+    q0 = Uniform('q0', 0.01, 1.5, value = 0.8)
     
     @deterministic
-    def sim(alpha1 = alpha1, beta1 = beta1):
+    def sim(alpha1 = alpha1, beta1 = beta1, q0 = q0):
 #         beta1 = 5.37
         S = np.zeros(T)
         E = np.zeros(T)
+        P = np.zeros(T)
         I = np.zeros(T)
         IS = np.zeros(T)
         S[0] = init_S
         E[0] = init_E
+        P[0] = init_P
         I[0] = init_I * (1 - eta1[0] - eta2[0])
         IS[0] = init_I * (eta1[0] + eta2[0])
         cumulative_cases = np.zeros(T)
@@ -250,18 +259,19 @@ def SEIR_MODEL1(Ecumm, Icumm, Rcumm, init_S, init_E, init_I, init_R, bmi, sigma)
 #         cumulative_cases[2*T] = Rcumm[0]
 
         for j in range(1, T):
-            eta1j = get_arr(j-1, eta1)
-            eta2j = get_arr(j-1, eta2)
-            bmij = get_bmi(j-1, bmi)
-            sigmaj = get_sigma(j-1, sigma)
+            eta1j = get_arr(j+1, eta1)
+            eta2j = get_arr(j+1, eta2)
+            bmij = get_bmi(j+1, bmi)
+            sigmaj = get_sigma(j+1, sigma)
             
-            S[j] = S[j - 1] - alpha1 * S[j - 1] * bmij * I[j - 1] / population[0]
-            E[j] = E[j - 1] + alpha1 * S[j - 1] * bmij * I[j - 1] / population[0] - E[j - 1] / beta1
-            I[j] = I[j - 1] + (1-eta1j-eta2j) * E[j - 1] / beta1 - sigmaj * I[j - 1]
-            IS[j] = IS[j - 1] + (eta1j+eta2j) * E[j - 1] / beta1 - sigmaj * IS[j - 1]
+            S[j] = S[j - 1] - alpha1 * S[j - 1] * bmij * I[j - 1] / population[0] - q0 * alpha1 * S[j - 1] * bmij * P[j - 1] / population[0]
+            E[j] = E[j - 1] + alpha1 * S[j - 1] * bmij * I[j - 1] / population[0] + q0 * alpha1 * S[j - 1] * bmij * P[j - 1] / population[0] - E[j - 1] / (beta1 - pres_d)
+            P[j] = P[j - 1] + E[j - 1] / (beta1 - pres_d) - P[j - 1] / pres_d
+            I[j] = I[j - 1] + (1-eta1j-eta2j) * P[j - 1] / pres_d - sigmaj * I[j - 1]
+            IS[j] = IS[j - 1] + (eta1j+eta2j) * P[j - 1] / pres_d - sigmaj * IS[j - 1]
 #             cumulative_cases[j] = E[j] 
 #             cumulative_cases[j] = cumulative_cases[j - 1] + E[j - 1] / beta1
-            cumulative_cases[j] = E[j - 1] / beta1
+            cumulative_cases[j] = P[j - 1] / pres_d
 #             cumulative_cases[j + 2*T] = cumulative_cases[j + 2*T - 1] + sigmaj * (I[j - 1] + IS[j - 1])
             
         return cumulative_cases[:]
@@ -283,17 +293,17 @@ Rcumm = Rtrue[streetid, :]
 print("Sampling parameters for {}".format(simu_name))
 print(N[streetid], initE[streetid], initI[streetid], initR[streetid], streetid, streetname)
 np.random.seed(202018)
-mod1 = SEIR_MODEL1(Ecumm, Icumm + Rcumm, Rcumm, N[streetid], initE[streetid], initI[streetid], initR[streetid], 
+mod1 = SEIR_MODEL1(Ecumm, Icumm + Rcumm, Rcumm, N[streetid], initE[streetid], initP[streetid], initI[streetid], initR[streetid], 
                   e2, sigma)
 mc = MCMC(mod1)
-mc.use_step_method(AdaptiveMetropolis, [mod1['alpha1'], mod1['beta1']])#, mod1['s0'], mod1['e0']
+mc.use_step_method(AdaptiveMetropolis, [mod1['alpha1'], mod1['beta1'], mod1['q0']])#, mod1['s0'], mod1['e0']
 mc.sample(iter = 10001000, burn = 1000, thin = 1000, verbose = 0) #23000 35000
 
 
 # In[29]:
 
 street_params = {}
-street_params[streetname] = {'alpha_trace': mod1['alpha1'].trace(), 'beta_trace': mod1['beta1'].trace()}
+street_params[streetname] = {'alpha_trace': mod1['alpha1'].trace(), 'beta_trace': mod1['beta1'].trace(), 'q_trace': mod1['q0'].trace()}
 
 
 

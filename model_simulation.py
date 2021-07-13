@@ -137,8 +137,10 @@ eta2_noctrl = np.zeros(eta2.shape)
 N: total population of each region, order by valid_names
 initI: first day's infection num, order by valid_names
 '''
+pres_d = 2
 N = population
 initE = [x for x in Etrue[:, 0]]
+initP = [Itrue[0, int(pres_d)] - Itrue[0, 0]]
 initI = [x for x in Itrue[:, 0]]
 initR = [x for x in Rtrue[:, 0]]
 
@@ -171,50 +173,54 @@ def get_arr(t, arr):
 
 # In[22]:
 
-def sim_seiisr(INPUT, alpha1, bmi, beta1, sigma, t_range):
+def sim_seiisr(INPUT, alpha1, bmi, beta1, sigma, q, t_range):
     T = len(t_range)
     S = np.zeros(T)
     E = np.zeros(T)
+    P = np.zeros(T)
     I = np.zeros(T)
     IS = np.zeros(T)
     R = np.zeros(T)
     S[0] = INPUT[0]
     E[0] = INPUT[1]
-    I[0] = INPUT[2]
-    IS[0] = INPUT[3]
-    R[0] = INPUT[4]
+    P[0] = INPUT[2]
+    I[0] = INPUT[3]
+    IS[0] = INPUT[4]
+    R[0] = INPUT[5]
     print(INPUT)
-    beta1 = 1 / beta1
+    beta1 = 1 / (beta1 - pres_d)
     for j in range(1, T):
-        eta1j = get_arr(j-1, eta1)
-        eta2j = get_arr(j-1, eta2)
-        bmij = get_bmi(j-1, bmi)
-        sigmaj = get_sigma(j-1, sigma)
-        S[j] = S[j - 1] - alpha1 * S[j - 1] * bmij * I[j - 1] / population[0]
-        E[j] = E[j - 1] + alpha1 * S[j - 1] * bmij * I[j - 1] / population[0]   - beta1 * E[j - 1]
-        I[j] = I[j - 1] + (1-eta1j-eta2j) * beta1 * E[j - 1] - sigmaj * I[j - 1]
-        IS[j] = IS[j - 1] + (eta1j+eta2j) * beta1 * E[j - 1] - sigmaj * IS[j - 1]
+        eta1j = get_arr(j+1, eta1)
+        eta2j = get_arr(j+1, eta2)
+        bmij = get_bmi(j+1, bmi)
+        sigmaj = get_sigma(j+1, sigma)
+        S[j] = S[j - 1] - alpha1 * S[j - 1] * bmij * I[j - 1] / population[0] - q * alpha1 * S[j - 1] * bmij * P[j - 1] / population[0]
+        E[j] = E[j - 1] + alpha1 * S[j - 1] * bmij * I[j - 1] / population[0] + q * alpha1 * S[j - 1] * bmij * P[j - 1] / population[0]  - beta1 * E[j - 1]
+        P[j] = P[j - 1] + beta1 * E[j - 1] - P[j - 1] / pres_d
+        I[j] = I[j - 1] + (1-eta1j-eta2j) * P[j - 1] / pres_d - sigmaj * I[j - 1]
+        IS[j] = IS[j - 1] + (eta1j+eta2j) * P[j - 1] / pres_d - sigmaj * IS[j - 1]
         R[j] = R[j - 1] + sigmaj * (I[j - 1] + IS[j - 1])
 
-    return np.array([S, E, I, IS, R]).T
+    return np.array([S, E, P, I, IS, R]).T
 
 
 # In[23]:
 
-def simulate_single(alpha1, e2, beta1, sigma):
+def simulate_single(alpha1, e2, beta1, sigma, q):
 
     if alpha1 < 0 or beta1 < 0:
         print('Warning ', alpha1, beta1)
     
-    INPUT1 = np.zeros((5))
+    INPUT1 = np.zeros((6))
     INPUT1[0] = population[0]
     INPUT1[1] = initE[streetid]
-    INPUT1[2] = initI[streetid] * (1 - eta1[0] - eta2[0])
-    INPUT1[3] = initI[streetid] * (eta1[0] + eta2[0])
-    INPUT1[4] = initR[streetid]
+    INPUT1[2] = initP[streetid]
+    INPUT1[3] = initI[streetid] * (1 - eta1[0] - eta2[0])
+    INPUT1[4] = initI[streetid] * (eta1[0] + eta2[0])
+    INPUT1[5] = initR[streetid]
     
     t_range = np.arange(0.0, t, 1.0)
-    RES1 = sim_seiisr(INPUT1, alpha1, e2, beta1, sigma, t_range)
+    RES1 = sim_seiisr(INPUT1, alpha1, e2, beta1, sigma, q, t_range)
     
     return RES1
 
@@ -223,7 +229,7 @@ def simulate_single(alpha1, e2, beta1, sigma):
 
 import numpy as np
 
-def SEIR_MODEL1(Ecumm, Icumm, Rcumm, init_S, init_E, init_I, init_R, bmi, sigma):
+def SEIR_MODEL1(Ecumm, Icumm, Rcumm, init_S, init_E, init_P, init_I, init_R, bmi, sigma):
     T = len(Ecumm)
     print(T)
 #     case_data = Icumm
@@ -231,16 +237,19 @@ def SEIR_MODEL1(Ecumm, Icumm, Rcumm, init_S, init_E, init_I, init_R, bmi, sigma)
     
     alpha1 = Uniform('alpha1', 1e-3, 5, value = 0.9)
     beta1 = Weibull('beta1', alpha = 1.681228, beta = 6.687700 )
+    q0 = Uniform('q0', 0.01, 1.5, value = 0.8)
     
     @deterministic
-    def sim(alpha1 = alpha1, beta1 = beta1):
+    def sim(alpha1 = alpha1, beta1 = beta1, q0 = q0):
 #         beta1 = 5.37
         S = np.zeros(T)
         E = np.zeros(T)
+        P = np.zeros(T)
         I = np.zeros(T)
         IS = np.zeros(T)
         S[0] = init_S
         E[0] = init_E
+        P[0] = init_P
         I[0] = init_I * (1 - eta1[0] - eta2[0])
         IS[0] = init_I * (eta1[0] + eta2[0])
         cumulative_cases = np.zeros(T)
@@ -249,18 +258,19 @@ def SEIR_MODEL1(Ecumm, Icumm, Rcumm, init_S, init_E, init_I, init_R, bmi, sigma)
 #         cumulative_cases[2*T] = Rcumm[0]
 
         for j in range(1, T):
-            eta1j = get_arr(j-1, eta1)
-            eta2j = get_arr(j-1, eta2)
-            bmij = get_bmi(j-1, bmi)
-            sigmaj = get_sigma(j-1, sigma)
+            eta1j = get_arr(j+1, eta1)
+            eta2j = get_arr(j+1, eta2)
+            bmij = get_bmi(j+1, bmi)
+            sigmaj = get_sigma(j+1, sigma)
             
-            S[j] = S[j - 1] - alpha1 * S[j - 1] * bmij * I[j - 1] / population[0]
-            E[j] = E[j - 1] + alpha1 * S[j - 1] * bmij * I[j - 1] / population[0] - E[j - 1] / beta1
-            I[j] = I[j - 1] + (1-eta1j-eta2j) * E[j - 1] / beta1 - sigmaj * I[j - 1]
-            IS[j] = IS[j - 1] + (eta1j+eta2j) * E[j - 1] / beta1 - sigmaj * IS[j - 1]
+            S[j] = S[j - 1] - alpha1 * S[j - 1] * bmij * I[j - 1] / population[0] - q0 * alpha1 * S[j - 1] * bmij * P[j - 1] / population[0]
+            E[j] = E[j - 1] + alpha1 * S[j - 1] * bmij * I[j - 1] / population[0] + q0 * alpha1 * S[j - 1] * bmij * P[j - 1] / population[0] - E[j - 1] / (beta1 - pres_d)
+            P[j] = P[j - 1] + E[j - 1] / (beta1 - pres_d) - P[j - 1] / pres_d
+            I[j] = I[j - 1] + (1-eta1j-eta2j) * P[j - 1] / pres_d - sigmaj * I[j - 1]
+            IS[j] = IS[j - 1] + (eta1j+eta2j) * P[j - 1] / pres_d - sigmaj * IS[j - 1]
 #             cumulative_cases[j] = E[j] 
 #             cumulative_cases[j] = cumulative_cases[j - 1] + E[j - 1] / beta1
-            cumulative_cases[j] = E[j - 1] / beta1
+            cumulative_cases[j] = P[j - 1] / pres_d
 #             cumulative_cases[j + 2*T] = cumulative_cases[j + 2*T - 1] + sigmaj * (I[j - 1] + IS[j - 1])
             
         return cumulative_cases[:]
@@ -273,11 +283,37 @@ def get_result_with_CI(params, bmi, eta1, eta2):
     alphas = params['alpha_trace']
 #     betas = np.array([5.37 for i in range(len(alphas))])
     betas = params['beta_trace']
+    qs = params['q_trace']
     
-    for alpha, beta in zip(alphas, betas):
+    for alpha, beta, q in zip(alphas, betas, qs):
         allres.append(simulate_exp( 
                           alpha, bmi, 
-                          beta,  sigma, eta1, eta2
+                          beta, sigma, q, eta1, eta2
+                            )
+                     )
+    print(len(allres))
+    result = np.zeros(allres[0].shape)
+    resultup = np.zeros(allres[0].shape)
+    resultdown = np.zeros(allres[0].shape)
+    for i in range(allres[0].shape[0]):
+        for j in range(allres[0].shape[1]):
+            tmp = [x[i, j] for x in allres]
+            result[i, j] = np.percentile(tmp, 50)
+            resultup[i, j] = np.percentile(tmp, 97.5)
+            resultdown[i, j] = np.percentile(tmp, 2.5)
+    return result, resultup, resultdown
+
+def get_result_with_CI2(params, bmi, eta1, eta2, sigma):
+    allres = []
+    alphas = params['alpha_trace']
+#     betas = np.array([5.37 for i in range(len(alphas))])
+    betas = params['beta_trace']
+    qs = params['q_trace']
+    print(sigma)
+    for alpha, beta, q in zip(alphas, betas, qs):
+        allres.append(simulate_exp( 
+                          alpha, bmi, 
+                          beta, sigma, q, eta1, eta2
                             )
                      )
     print(len(allres))
@@ -296,60 +332,68 @@ def save_resultforsimu(result, resultup, resultdown, orgres, orgresup, orgresdow
     df = pd.DataFrame(data = {
         'Date': dt_range,
         'reported_I': Itrue[streetid, :] + Rtrue[streetid, :],
-        'incidence_conbined_intervention_I': orgres[:, 5],
-        'incidence_conbined_intervention_I_up': orgresup[:, 5],
-        'incidence_conbined_intervention_I_down': orgresdown[:, 5],
-        'incidence_simulation_I': result[:, 5],
-        'incidence_simulation_I_up': resultup[:, 5],
-        'incidence_simulation_I_down': resultdown[:, 5],
+        'incidence_conbined_intervention_I': orgres[:, 6],
+        'incidence_conbined_intervention_I_up': orgresup[:, 6],
+        'incidence_conbined_intervention_I_down': orgresdown[:, 6],
+        'incidence_simulation_I': result[:, 6],
+        'incidence_simulation_I_up': resultup[:, 6],
+        'incidence_simulation_I_down': resultdown[:, 6],
+        'simulation_I': result[:, 3] + result[:, 4] + result[:, 5],
+        'simulation_I_up': resultup[:, 3] + resultup[:, 4] + resultup[:, 5],
+        'simulation_I_down': resultdown[:, 3] + resultdown[:, 4] + resultdown[:, 5],
+
     })
     df.to_csv(filename, index=False)
 
-def sim_seiisr_exp(INPUT, alpha1, bmi, beta1, sigma, t_range, eta1, eta2):
+def sim_seiisr_exp(INPUT, alpha1, bmi, beta1, sigma, q, t_range, eta1, eta2):
     T = len(t_range)
     S = np.zeros(T)
     E = np.zeros(T)
+    P = np.zeros(T)
     I = np.zeros(T)
     IS = np.zeros(T)
     R = np.zeros(T)
     newI = np.zeros(T)
     S[0] = INPUT[0]
     E[0] = INPUT[1]
-    I[0] = INPUT[2]
-    IS[0] = INPUT[3]
-    R[0] = INPUT[4]
-    newI[0] = INPUT[2]+INPUT[3]+INPUT[4]
-    beta1 = 1 / beta1
+    P[0] = INPUT[2]
+    I[0] = INPUT[3]
+    IS[0] = INPUT[4]
+    R[0] = INPUT[5]
+    newI[0] = INPUT[3]+INPUT[4]+INPUT[5]
+    beta1 = 1 / (beta1 - pres_d)
     for j in range(1, T):
-        eta1j = get_arr(j-1, eta1)
-        eta2j = get_arr(j-1, eta2)
-        bmij = get_bmi(j-1, bmi)
-        sigmaj = get_sigma(j-1, sigma)
-        S[j] = S[j - 1] - alpha1 * S[j - 1] * bmij * I[j - 1] / population[0]
-        E[j] = E[j - 1] + alpha1 * S[j - 1] * bmij * I[j - 1] / population[0]  - beta1 * E[j - 1]
-        I[j] = I[j - 1] + (1-eta1j-eta2j) * beta1 * E[j - 1] - sigmaj * I[j - 1]
-        IS[j] = IS[j - 1] + (eta1j+eta2j) * beta1 * E[j - 1] - sigmaj * IS[j - 1]
+        eta1j = get_arr(j+1, eta1)
+        eta2j = get_arr(j+1, eta2)
+        bmij = get_bmi(j+1, bmi)
+        sigmaj = get_sigma(j+1, sigma)
+        S[j] = S[j - 1] - alpha1 * S[j - 1] * bmij * I[j - 1] / population[0] - q * alpha1 * S[j - 1] * bmij * P[j - 1] / population[0]
+        E[j] = E[j - 1] + alpha1 * S[j - 1] * bmij * I[j - 1] / population[0] + q * alpha1 * S[j - 1] * bmij * P[j - 1] / population[0] - beta1 * E[j - 1]
+        P[j] = P[j - 1] + beta1 * E[j - 1] - P[j - 1] / pres_d
+        I[j] = I[j - 1] + (1-eta1j-eta2j) * P[j - 1] / pres_d - sigmaj * I[j - 1]
+        IS[j] = IS[j - 1] + (eta1j+eta2j) * P[j - 1] / pres_d - sigmaj * IS[j - 1]
         R[j] = R[j - 1] + sigmaj * (I[j - 1] + IS[j - 1])
-        newI[j] = beta1 * E[j - 1]
+        newI[j] = P[j - 1] / pres_d
 
-    return np.array([S, E, I, IS, R, newI]).T
+    return np.array([S, E, P, I, IS, R, newI]).T
 
-def simulate_exp(alpha1, bmi, beta1, sigma, eta1, eta2):
+def simulate_exp(alpha1, bmi, beta1, sigma, q, eta1, eta2):
 
 #     k = 30
     
     if alpha1 < 0 or beta1 < 0:
         print('Warning ', alpha1, beta1)
     
-    INPUT1 = np.zeros((5))
+    INPUT1 = np.zeros((6))
     INPUT1[0] = population[0]
     INPUT1[1] = initE[streetid]
-    INPUT1[2] = initI[streetid] * (1 - eta1[0] - eta2[0])
-    INPUT1[3] = initI[streetid] * (eta1[0] + eta2[0])
-    INPUT1[4] = initR[streetid]
+    INPUT1[2] = initP[streetid]
+    INPUT1[3] = initI[streetid] * (1 - eta1[0] - eta2[0])
+    INPUT1[4] = initI[streetid] * (eta1[0] + eta2[0])
+    INPUT1[5] = initR[streetid]
     
     t_range = np.arange(0.0, t, 1.0)
-    RES1 = sim_seiisr_exp(INPUT1, alpha1, bmi, beta1, sigma, t_range, eta1, eta2)
+    RES1 = sim_seiisr_exp(INPUT1, alpha1, bmi, beta1, sigma, q, t_range, eta1, eta2)
     
     return RES1
 
@@ -363,8 +407,24 @@ for sce_name in ['Main', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6']:
     streetid = 0
     e2 = bmi
     sigma = np.divide(1, confirmrate)
+    sigma2 = sigma[:8]
 
     params = street_params['Beijing']
+
+    if sce_name == 'S1':
+        initE[0] = 35
+    elif sce_name == 'S2':
+        initE[0] = 43
+    else:
+        initE[0] = 37
+
+    if sce_name == 'S5':
+        pres_d = 1.1
+    elif sce_name == 'S6':
+        pres_d = 3.0
+    else:
+        pres_d = 2.
+    initP = [Itrue[0, int(pres_d)] - Itrue[0, 0]]
 
     t = len(alldates) + 0
     based_time = str_to_dt(alldates[0])
@@ -376,53 +436,95 @@ for sce_name in ['Main', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6']:
     from matplotlib.dates import DateFormatter
     formatter = DateFormatter("%d %B")
 
-    reported_I = Itrue[streetid, :] + Rtrue[streetid, :]
-    print("RMSE for scenario {} is {:.3f}".format(sce_name, np.sqrt(mean_squared_error(np.diff(reported_I), orgres[1:, 5]))))
-
-    result, resultup, resultdown = get_result_with_CI(params, bmi_noctrl, eta1_noctrl, eta2_noctrl)
-    save_resultforsimu(result, resultup, resultdown, orgres, orgresup, orgresdown, './{}/{}_resultsimu000.csv'.format(dir_name, sce_name), t_range_subdt)
-    
     plt.figure(figsize=(10, 5))
-    plt.plot(t_range_subdt, orgres[:, 5], 'b', label = 'Combined interventions')
-    plt.fill_between(t_range_subdt, orgresdown[:, 5], orgresup[:, 5], alpha=0.5, color='lightblue')
-    plt.plot(t_range_subdt, result[:, 5], 'orchid', label = 'No TIs')
-    plt.fill_between(t_range_subdt, resultdown[:, 5], resultup[:, 5], alpha=0.7, color='lavender')
+    plt.plot(t_range_subdt[1:], orgres[1:, 6], 'b', label = 'Simulation')
+    plt.fill_between(t_range_subdt[1:], orgresdown[1:, 6], orgresup[1:, 6], alpha=0.5, color='lightblue')
+    plt.plot(t_range_subdt[1:len(Itrue[streetid, :])], np.diff(Itrue[streetid, :] + Rtrue[streetid, :]), 'ko', label = 'Observation')
     plt.xlabel('Date')
     plt.ylabel('Number of cases')
     span_xticks = 3
     x = t_range_subdt
     plt.xticks(np.array(x)[np.arange(0, len(x), span_xticks)])
-    plt.gcf().axes[0].xaxis.set_major_formatter(formatter)
-    plt.gcf().autofmt_xdate()
-    # plt.grid()
     ax = plt.gca()
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
-    plt.ylim(0, 300)
+    plt.ylim(0, 50)
+    plt.xlim(t_range_subdt[0])
+    plt.gcf().axes[0].xaxis.set_major_formatter(formatter)
+    plt.gcf().autofmt_xdate()
+    plt.legend(loc='upper left', frameon=False)
+    if gen_plot:
+        plt.savefig('./{}/{}_FigS8A_incidence.pdf'.format(dir_name, sce_name), bbox_inches='tight')
+    plt.close()
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(t_range_subdt, orgres[:, 3] + orgres[:, 4] + orgres[:, 5], 'b', label = 'Estimated')
+    plt.fill_between(t_range_subdt, orgresdown[:, 3] + orgresdown[:, 4] + orgresdown[:, 5], orgresup[:, 3] + orgresup[:, 4] + orgresup[:, 5], alpha=0.5, color='lightblue')
+    plt.plot(t_range_subdt[:len(Itrue[streetid, :])], Itrue[streetid, :] + Rtrue[streetid, :], 'ko', label = 'Reported')
+    plt.xlabel('Date')
+    plt.ylabel('Number of cumulative cases')
+    span_xticks = 3
+    x = t_range_subdt
+    plt.xticks(np.array(x)[np.arange(0, len(x), span_xticks)])
+    plt.gcf().axes[0].xaxis.set_major_formatter(formatter)
+    plt.gcf().autofmt_xdate()
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    plt.ylim(0,400)
     plt.xlim(t_range_subdt[0])
     plt.legend(loc='upper left', frameon=False)
     if gen_plot:
-        plt.savefig('./{}/{}_FigS6A_incidence.pdf'.format(dir_name, sce_name), bbox_inches='tight')
+        plt.savefig('./{}/{}_FigS8B_cumulative.pdf'.format(dir_name, sce_name), bbox_inches='tight')
+    plt.close()
+
+    reported_I = Itrue[streetid, :] + Rtrue[streetid, :]
+    print("RMSE for scenario {} is {:.3f}".format(sce_name, np.sqrt(mean_squared_error(np.diff(reported_I), orgres[1:, 6]))))
+
+    result, resultup, resultdown = get_result_with_CI2(params, bmi_noctrl, eta1_noctrl, eta2_noctrl, sigma2)
+    save_resultforsimu(result, resultup, resultdown, orgres, orgresup, orgresdown, './{}/{}_resultsimu000.csv'.format(dir_name, sce_name), t_range_subdt)
+    
+    plt.figure(figsize=(10, 5))
+    plt.plot(t_range_subdt, orgres[:, 6], 'b', label = 'Combined interventions', clip_on=False, zorder=3)
+    plt.fill_between(t_range_subdt, orgresdown[:, 6], orgresup[:, 6], alpha=0.5, color='lightblue', clip_on=False, zorder=3)
+    plt.plot(t_range_subdt, result[:, 6], 'orchid', label = 'No NPIs')
+    plt.fill_between(t_range_subdt, resultdown[:, 6], resultup[:, 6], alpha=0.7, color='lavender')
+    plt.xlabel('Date')
+    plt.ylabel('Number of cases')
+    span_xticks = 3
+    x = t_range_subdt
+    plt.xticks(np.array(x)[np.arange(0, len(x), span_xticks)])
+    plt.gcf().axes[0].xaxis.set_major_formatter(formatter)
+    plt.gcf().autofmt_xdate()
+    # plt.grid()
+    ax = plt.gca()
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    plt.ylim(0, 10000)
+    plt.xlim(t_range_subdt[0])
+    plt.legend(loc='upper left', frameon=False)
+    if gen_plot:
+        plt.savefig('./{}/{}_FigS7A_incidence.pdf'.format(dir_name, sce_name), bbox_inches='tight')
     plt.close()
 
     plt.figure(figsize=(10, 6))
-    plt.plot(t_range_subdt, orgres[:, 5], 'b', label = 'A: Combined interventions')
-    plt.fill_between(t_range_subdt, orgresdown[:, 5], orgresup[:, 5], alpha=0.5, color='lightblue')
+    plt.plot(t_range_subdt, orgres[:, 6], 'b', label = 'A: Combined interventions')
+    plt.fill_between(t_range_subdt, orgresdown[:, 6], orgresup[:, 6], alpha=0.5, color='lightblue')
 
     result, resultup, resultdown = get_result_with_CI(params, bmi_noctrl, eta1, eta2)
     save_resultforsimu(result, resultup, resultdown, orgres, orgresup, orgresdown, './{}/{}_resultsimu011.csv'.format(dir_name, sce_name), t_range_subdt)
-    plt.plot(t_range_subdt, result[:, 5], 'r', label = 'C: No localized lockdown')
-    plt.fill_between(t_range_subdt, resultdown[:, 5], resultup[:, 5], alpha=0.5, color='pink')
+    plt.plot(t_range_subdt, result[:, 6], 'r', label = 'C: No localized lockdown')
+    plt.fill_between(t_range_subdt, resultdown[:, 6], resultup[:, 6], alpha=0.5, color='pink')
 
     result, resultup, resultdown = get_result_with_CI(params, bmi, eta1_noctrl, eta2)
     save_resultforsimu(result, resultup, resultdown, orgres, orgresup, orgresdown, './{}/{}_resultsimu101.csv'.format(dir_name, sce_name), t_range_subdt)
-    plt.plot(t_range_subdt, result[:, 5], 'orange', label = 'D: No close-contact tracing')
-    plt.fill_between(t_range_subdt, resultdown[:, 5], resultup[:, 5], alpha=0.5, color='wheat')
+    plt.plot(t_range_subdt, result[:, 6], 'orange', label = 'D: No close-contact tracing')
+    plt.fill_between(t_range_subdt, resultdown[:, 6], resultup[:, 6], alpha=0.5, color='wheat')
 
     result, resultup, resultdown = get_result_with_CI(params, bmi, eta1, eta2_noctrl)
     save_resultforsimu(result, resultup, resultdown, orgres, orgresup, orgresdown, './{}/{}_resultsimu110.csv'.format(dir_name, sce_name), t_range_subdt)
-    plt.plot(t_range_subdt, result[:, 5], 'orchid', label = 'E: No community-based NAT')
-    plt.fill_between(t_range_subdt, resultdown[:, 5], resultup[:, 5], alpha=0.7, color='lavender')
+    plt.plot(t_range_subdt, result[:, 6], 'orchid', label = 'E: No community-based NAT')
+    plt.fill_between(t_range_subdt, resultdown[:, 6], resultup[:, 6], alpha=0.7, color='lavender')
 
     plt.xlabel('Date')
     plt.ylabel('Number of cases')
@@ -435,31 +537,31 @@ for sce_name in ['Main', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6']:
     ax = plt.gca()
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
-    plt.ylim(0, 60)
+    plt.ylim(0, 80)
     plt.xlim(t_range_subdt[0], t_range_subdt[-1])
     plt.legend(loc='upper left', frameon=False)
     if gen_plot:
-        plt.savefig('./{}/{}_FigS6B_incidence.pdf'.format(dir_name, sce_name), bbox_inches='tight')
+        plt.savefig('./{}/{}_FigS7B_incidence.pdf'.format(dir_name, sce_name), bbox_inches='tight')
     plt.close()
 
     plt.figure(figsize=(10, 6))
-    plt.plot(t_range_subdt, orgres[:, 5], 'b', label = 'A: Combined interventions')
-    plt.fill_between(t_range_subdt, orgresdown[:, 5], orgresup[:, 5], alpha=0.5, color='lightblue')
+    plt.plot(t_range_subdt, orgres[:, 6], 'b', label = 'A: Combined interventions')
+    plt.fill_between(t_range_subdt, orgresdown[:, 6], orgresup[:, 6], alpha=0.5, color='lightblue')
 
     result, resultup, resultdown = get_result_with_CI(params, bmi, eta1_noctrl, eta2_noctrl)
     save_resultforsimu(result, resultup, resultdown, orgres, orgresup, orgresdown, './{}/{}_resultsimu100.csv'.format(dir_name, sce_name), t_range_subdt)
-    plt.plot(t_range_subdt, result[:, 5], 'r', label = 'F: Localized lockdown only')
-    plt.fill_between(t_range_subdt, resultdown[:, 5], resultup[:, 5], alpha=0.5, color='pink')
+    plt.plot(t_range_subdt, result[:, 6], 'r', label = 'F: Localized lockdown only')
+    plt.fill_between(t_range_subdt, resultdown[:, 6], resultup[:, 6], alpha=0.5, color='pink')
 
     result, resultup, resultdown = get_result_with_CI(params, bmi_noctrl, eta1, eta2_noctrl)
     save_resultforsimu(result, resultup, resultdown, orgres, orgresup, orgresdown, './{}/{}_resultsimu010.csv'.format(dir_name, sce_name), t_range_subdt)
-    plt.plot(t_range_subdt, result[:, 5], 'orange', label = 'G: Close-contact tracing only')
-    plt.fill_between(t_range_subdt, resultdown[:, 5], resultup[:, 5], alpha=0.5, color='wheat')
+    plt.plot(t_range_subdt, result[:, 6], 'orange', label = 'G: Close-contact tracing only')
+    plt.fill_between(t_range_subdt, resultdown[:, 6], resultup[:, 6], alpha=0.5, color='wheat')
 
     result, resultup, resultdown = get_result_with_CI(params, bmi_noctrl, eta1_noctrl, eta2)
     save_resultforsimu(result, resultup, resultdown, orgres, orgresup, orgresdown, './{}/{}_resultsimu001.csv'.format(dir_name, sce_name), t_range_subdt)
-    plt.plot(t_range_subdt, result[:, 5], 'orchid', label = 'H: Community-based NAT only')
-    plt.fill_between(t_range_subdt, resultdown[:, 5], resultup[:, 5], alpha=0.7, color='lavender')
+    plt.plot(t_range_subdt, result[:, 6], 'orchid', label = 'H: Community-based NAT only')
+    plt.fill_between(t_range_subdt, resultdown[:, 6], resultup[:, 6], alpha=0.7, color='lavender')
 
     plt.xlabel('Date')
     plt.ylabel('Number of cases')
@@ -472,7 +574,7 @@ for sce_name in ['Main', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6']:
     ax = plt.gca()
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
-    plt.ylim(0, 90)
+    plt.ylim(0, 250)
     plt.xlim(t_range_subdt[0], t_range_subdt[-1])
     plt.legend(loc='upper left', frameon=False)
     if gen_plot:
